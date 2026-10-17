@@ -1,0 +1,21 @@
+<!--
+  Supabase の確認メールの文面（Confirm signup）
+  設定する場所：Supabase の管理画面 → Authentication → Email Templates → Confirm signup
+
+  件名（Subject）：【まちのお地蔵さん】メールアドレスの確認
+
+  ▼ https://YOUR-CONFIRM-PAGE/ は、確認ページを置いた場所の URL に直す
+  ▼ {{ .TokenHash }} は、Supabase が自動で入れる値。そのまま残す
+-->
+<div style="font-family: 'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif; line-height: 1.8; color: #2f3a2f; max-width: 480px;">
+  <h2 style="font-size: 18px; color: #4b6a52;">メールアドレスの確認</h2>
+  <p>「まちのお地蔵さん」にご登録いただき、ありがとうございます。</p>
+  <p>下のボタンを押すと、確認のページが開きます。<br>ページで「はい、私です」を押すと、登録が完了します。</p>
+  <p style="margin: 24px 0;">
+    <a href="https://YOUR-CONFIRM-PAGE/?token_hash={{ .TokenHash }}&type=email"
+       style="display: inline-block; padding: 14px 28px; background: #5f8266; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: bold;">
+      確認のページを開く
+    </a>
+  </p>
+  <p style="font-size: 13px; color: #5f6b5f;">心当たりがない場合は、このメールを破棄してください。</p>
+</div>
