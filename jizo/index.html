@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
-<title>メールアドレスの確認｜まちのお地蔵さん</title>
+<title>まちのお地蔵さん</title>
 <style>
   :root {
     --bg: #f7f4ec;
@@ -32,7 +32,7 @@
     }
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { min-height: 100%; margin: 0; }
   body {
     background: var(--bg);
     color: var(--text);
@@ -56,6 +56,20 @@
   .lead { margin: 0 0 24px; color: var(--sub); font-size: 14px; }
   p { margin: 0 0 16px; }
   .note { font-size: 13px; color: var(--sub); margin: 20px 0 0; }
+  label { display: block; text-align: left; font-size: 14px; color: var(--sub); margin: 0 0 6px; }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    color: var(--text);
+    font-size: 16px;
+    font-family: inherit;
+    margin: 0 0 16px;
+  }
+  .show-password { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--sub); text-align: left; margin: -4px 0 16px; }
+  .show-password input { width: 18px; height: 18px; margin: 0; }
   button {
     width: 100%;
     min-height: 52px;
@@ -79,24 +93,36 @@
 <body>
 <main>
   <h1>まちのお地蔵さん</h1>
-  <p class="lead">メールアドレスの確認</p>
+  <p class="lead" id="lead">メールアドレスの確認</p>
 
-  <!-- 1. 確認を押してもらう画面（ボタンを押すまで、確認は済まない） -->
+  <!-- 1. ボタンを押してもらう画面（ボタンを押すまで、何も起こらない） -->
   <section id="ask">
-    <p>ご自身で登録した場合は、<br>下のボタンを押してください。</p>
+    <p id="ask-text"></p>
     <button id="confirm" type="button">はい、私です</button>
     <div id="ask-message" class="message error" role="alert" hidden></div>
-    <p class="note">心当たりがない場合は、このページを閉じてください。<br>何も起こりません。</p>
+    <p class="note" id="ask-note"></p>
   </section>
 
-  <!-- 2. 確認できた画面 -->
+  <!-- 2. 新しいパスワードを入れる画面（パスワードの再設定のときだけ） -->
+  <section id="form" hidden>
+    <p>新しいパスワードを入れてください。</p>
+    <label for="new-password">新しいパスワード（8文字以上）</label>
+    <input id="new-password" type="password" autocomplete="new-password">
+    <label for="new-password2">もう一度、入れてください</label>
+    <input id="new-password2" type="password" autocomplete="new-password">
+    <label class="show-password"><input id="show-password" type="checkbox"> パスワードを表示する</label>
+    <button id="save" type="button">パスワードを変更する</button>
+    <div id="form-message" class="message error" role="alert" hidden></div>
+  </section>
+
+  <!-- 3. 終わった画面 -->
   <section id="done" hidden>
     <p class="done-mark" aria-hidden="true">🙏</p>
-    <p><strong>確認できました。</strong></p>
-    <p>アプリに戻って、<br>登録したメールアドレスとパスワードで<br>ログインしてください。</p>
+    <p><strong id="done-title"></strong></p>
+    <p id="done-text"></p>
   </section>
 
-  <!-- 3. 確認できなかった画面 -->
+  <!-- 4. できなかった画面 -->
   <section id="failed" hidden>
     <div id="failed-message" class="message error" role="alert"></div>
   </section>
@@ -111,96 +137,200 @@
   var SUPABASE_URL = "https://hlttzfxpzhdmunyzjhwp.supabase.co";
   var SUPABASE_ANON_KEY = "sb_publishable_CVvDog0oBml-OmsTlmpxpQ_PR0BbXfW";
 
-  // この画面で扱う確認の種類（新規登録の確認だけ）
-  var ALLOWED_TYPES = ["email", "signup"];
+  var MIN_PASSWORD_LENGTH = 8;
+
+  // 種類ごとの文面。email / signup は、新規登録の確認。recovery は、パスワードの再設定
+  var MODES = {
+    email: {
+      lead: "メールアドレスの確認",
+      ask: "ご自身で登録した場合は、<br>下のボタンを押してください。",
+      note: "心当たりがない場合は、このページを閉じてください。<br>何も起こりません。",
+      doneTitle: "確認できました。",
+      doneText: "アプリに戻って、<br>登録したメールアドレスとパスワードで<br>ログインしてください。",
+      recovery: false
+    },
+    recovery: {
+      lead: "パスワードの再設定",
+      ask: "ご自身でパスワードを再設定する場合は、<br>下のボタンを押してください。",
+      note: "心当たりがない場合は、このページを閉じてください。<br>パスワードは、変わりません。",
+      doneTitle: "パスワードを変更しました。",
+      doneText: "アプリに戻って、<br>新しいパスワードでログインしてください。",
+      recovery: true
+    }
+  };
+  MODES.signup = MODES.email;
 
   var MESSAGES = {
-    missing: "確認のリンクが正しくありません。メールのボタンから、もう一度開いてください。",
-    expired: "このリンクは、期限が切れているか、すでに使われています。確認がすでに済んでいる場合は、アプリでそのままログインできます。ログインできない場合は、アプリで確認メールを再送してください。",
+    missing: "リンクが正しくありません。メールのボタンから、もう一度開いてください。",
+    expiredConfirm: "このリンクは、期限が切れているか、すでに使われています。確認がすでに済んでいる場合は、アプリでそのままログインできます。ログインできない場合は、アプリで確認メールを再送してください。",
+    expiredRecovery: "このリンクは、期限が切れているか、すでに使われています。お手数ですが、アプリの「パスワードを忘れた方」から、もう一度、メールを送ってください。",
+    sessionExpired: "操作の有効期限が切れました。お手数ですが、アプリの「パスワードを忘れた方」から、もう一度、メールを送ってください。",
     network: "通信できませんでした。電波のよい場所で、もう一度押してください。",
-    other: "確認できませんでした。しばらくしてから、もう一度お試しください。"
+    other: "うまくいきませんでした。しばらくしてから、もう一度お試しください。",
+    short: "パスワードは、" + MIN_PASSWORD_LENGTH + "文字以上にしてください。",
+    mismatch: "2つのパスワードが、同じではありません。",
+    weak: "パスワードが短いか、簡単すぎます。" + MIN_PASSWORD_LENGTH + "文字以上で、推測されにくいものにしてください。",
+    same: "今までのパスワードと同じです。別のパスワードにしてください。"
   };
 
   var params = new URLSearchParams(window.location.search);
   var tokenHash = params.get("token_hash");
   var type = params.get("type") || "email";
+  var mode = MODES[type];
 
   // トークンを、アドレス欄や履歴に残さない
   if (window.history && typeof window.history.replaceState === "function") {
     window.history.replaceState(null, "", window.location.pathname);
   }
 
-  var askSection = document.getElementById("ask");
-  var doneSection = document.getElementById("done");
-  var failedSection = document.getElementById("failed");
-  var failedMessage = document.getElementById("failed-message");
-  var askMessage = document.getElementById("ask-message");
-  var button = document.getElementById("confirm");
-  var busy = false;
+  function $(id) { return document.getElementById(id); }
+  var sections = { ask: $("ask"), form: $("form"), done: $("done"), failed: $("failed") };
 
+  function show(name) {
+    Object.keys(sections).forEach(function (key) { sections[key].hidden = key !== name; });
+  }
   function showFailed(text) {
-    failedMessage.textContent = text;
-    askSection.hidden = true;
-    doneSection.hidden = true;
-    failedSection.hidden = false;
+    $("failed-message").textContent = text;
+    show("failed");
+  }
+  function showMessage(el, text) {
+    el.textContent = text;
+    el.hidden = false;
   }
 
-  function showDone() {
-    askSection.hidden = true;
-    failedSection.hidden = true;
-    doneSection.hidden = false;
-  }
-
-  function showRetry(text) {
-    askMessage.textContent = text;
-    askMessage.hidden = false;
-    button.disabled = false;
-    button.textContent = "はい、私です";
-    busy = false;
-  }
-
-  // リンクが正しくないときは、ボタンを出さずに、案内だけを出す
-  if (!tokenHash || ALLOWED_TYPES.indexOf(type) === -1) {
+  if (!tokenHash || !mode) {
     showFailed(MESSAGES.missing);
     return;
   }
 
-  button.addEventListener("click", function () {
+  // 文面を、種類に合わせる（固定の文章だけを入れるので、innerHTML を使ってよい）
+  $("lead").textContent = mode.lead;
+  $("ask-text").innerHTML = mode.ask;
+  $("ask-note").innerHTML = mode.note;
+  $("done-title").textContent = mode.doneTitle;
+  $("done-text").innerHTML = mode.doneText;
+  document.title = mode.lead + "｜まちのお地蔵さん";
+
+  var accessToken = null; // 再設定のときだけ使う。保存せず、このページを閉じると消える
+  var busy = false;
+
+  function readBody(res) {
+    return res.json().catch(function () { return {}; }).then(function (body) {
+      return { ok: res.ok, status: res.status, body: body };
+    });
+  }
+  function errorCode(r) {
+    return (r.body && (r.body.error_code || r.body.code)) || "";
+  }
+
+  // ---- 1. 確認のボタン ----
+  var confirmButton = $("confirm");
+  var askMessage = $("ask-message");
+
+  confirmButton.addEventListener("click", function () {
     if (busy) { return; }
     busy = true;
-    button.disabled = true;
-    button.textContent = "確認しています…";
+    confirmButton.disabled = true;
+    confirmButton.textContent = "確認しています…";
     askMessage.hidden = true;
 
     fetch(SUPABASE_URL + "/auth/v1/verify", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": SUPABASE_ANON_KEY
-      },
+      headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
       body: JSON.stringify({ type: type, token_hash: tokenHash })
     })
-      .then(function (res) {
-        return res.json().catch(function () { return {}; }).then(function (body) {
-          return { ok: res.ok, status: res.status, body: body };
-        });
-      })
+      .then(readBody)
       .then(function (r) {
+        busy = false;
         if (r.ok) {
-          showDone();
+          if (mode.recovery) {
+            accessToken = r.body && r.body.access_token;
+            if (!accessToken) { showFailed(MESSAGES.other); return; }
+            show("form");
+            $("new-password").focus();
+          } else {
+            show("done");
+          }
           return;
         }
-        var code = (r.body && (r.body.error_code || r.body.code)) || "";
+        var code = errorCode(r);
         if (code === "otp_expired" || r.status === 403 || r.status === 404 || r.status === 410) {
-          showFailed(MESSAGES.expired);
+          showFailed(mode.recovery ? MESSAGES.expiredRecovery : MESSAGES.expiredConfirm);
         } else if (r.status >= 500) {
-          showRetry(MESSAGES.other);
+          retry(MESSAGES.other);
         } else {
           showFailed(MESSAGES.other);
         }
       })
+      .catch(function () { retry(MESSAGES.network); });
+  });
+
+  function retry(text) {
+    showMessage(askMessage, text);
+    confirmButton.disabled = false;
+    confirmButton.textContent = "はい、私です";
+    busy = false;
+  }
+
+  // ---- 2. 新しいパスワード（再設定のときだけ） ----
+  var pw1 = $("new-password");
+  var pw2 = $("new-password2");
+  var saveButton = $("save");
+  var formMessage = $("form-message");
+
+  $("show-password").addEventListener("change", function (event) {
+    var visible = event.target.checked;
+    pw1.type = visible ? "text" : "password";
+    pw2.type = visible ? "text" : "password";
+  });
+
+  saveButton.addEventListener("click", function () {
+    if (busy) { return; }
+    formMessage.hidden = true;
+
+    if (pw1.value.length < MIN_PASSWORD_LENGTH) { showMessage(formMessage, MESSAGES.short); return; }
+    if (pw1.value !== pw2.value) { showMessage(formMessage, MESSAGES.mismatch); return; }
+
+    busy = true;
+    saveButton.disabled = true;
+    saveButton.textContent = "変更しています…";
+
+    fetch(SUPABASE_URL + "/auth/v1/user", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": "Bearer " + accessToken
+      },
+      body: JSON.stringify({ password: pw1.value })
+    })
+      .then(readBody)
+      .then(function (r) {
+        if (r.ok) {
+          pw1.value = "";
+          pw2.value = "";
+          accessToken = null;
+          busy = false;
+          show("done");
+          return;
+        }
+        var code = errorCode(r);
+        var text = MESSAGES.other;
+        var final = false;
+        if (code === "same_password") { text = MESSAGES.same; }
+        else if (code === "weak_password") { text = MESSAGES.weak; }
+        else if (r.status === 401 || r.status === 403) { text = MESSAGES.sessionExpired; final = true; }
+        if (final) { accessToken = null; busy = false; showFailed(text); return; }
+        showMessage(formMessage, text);
+        saveButton.disabled = false;
+        saveButton.textContent = "パスワードを変更する";
+        busy = false;
+      })
       .catch(function () {
-        showRetry(MESSAGES.network);
+        showMessage(formMessage, MESSAGES.network);
+        saveButton.disabled = false;
+        saveButton.textContent = "パスワードを変更する";
+        busy = false;
       });
   });
 })();
